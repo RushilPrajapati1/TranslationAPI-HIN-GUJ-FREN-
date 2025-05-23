@@ -6,54 +6,88 @@
 //
 
 import SwiftUI
-import SwiftData
+import AVFoundation
 
 struct ContentView: View {
-    @Environment(\.modelContext) private var modelContext
-    @Query private var items: [Item]
+    @State private var inputText = ""
+    @State private var selectedLang = "Hindi"
+    @State private var translatedText = ""
+    
+    let languages = ["Hindi", "Gujarati", "French"]
 
     var body: some View {
-        NavigationSplitView {
-            List {
-                ForEach(items) { item in
-                    NavigationLink {
-                        Text("Item at \(item.timestamp, format: Date.FormatStyle(date: .numeric, time: .standard))")
-                    } label: {
-                        Text(item.timestamp, format: Date.FormatStyle(date: .numeric, time: .standard))
+        VStack(spacing: 20) {
+            TextField("Enter text to translate", text: $inputText)
+                .textFieldStyle(RoundedBorderTextFieldStyle())
+                .padding()
+
+            Picker("Language", selection: $selectedLang) {
+                ForEach(languages, id: \.self) { lang in
+                    Text(lang)
+                }
+            }
+            .pickerStyle(SegmentedPickerStyle())
+            .padding()
+
+            Button("Translate") {
+                var finalText = inputText
+                if selectedLang.lowercased() == "gujarati" && !inputText.starts(with: ">>guj<<") {
+                    finalText = ">>guj<< \(inputText)"
+                }
+                
+                TranslationService.shared.translate(text: finalText, to: selectedLang) { result in
+                    DispatchQueue.main.async {
+                        self.translatedText = result ?? "Translation failed."
                     }
                 }
-                .onDelete(perform: deleteItems)
             }
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    EditButton()
-                }
-                ToolbarItem {
-                    Button(action: addItem) {
-                        Label("Add Item", systemImage: "plus")
-                    }
-                }
-            }
-        } detail: {
-            Text("Select an item")
-        }
-    }
 
-    private func addItem() {
-        withAnimation {
-            let newItem = Item(timestamp: Date())
-            modelContext.insert(newItem)
-        }
-    }
 
-    private func deleteItems(offsets: IndexSet) {
-        withAnimation {
-            for index in offsets {
-                modelContext.delete(items[index])
+            Text("Translated:")
+                .font(.headline)
+
+            Text(translatedText)
+                .foregroundColor(.blue)
+                .padding()
+            
+            Button("🔊 Speak") {
+                speak(translatedText, language: selectedLang)
             }
+            .foregroundColor(.purple)
+            .padding()
+            
+
+            Spacer()
         }
+        .padding()
     }
+    func speak(_ text: String, language: String) {
+        let utterance = AVSpeechUtterance(string: text)
+
+            let langCode: String
+            switch language.lowercased() {
+                case "hindi": langCode = "hi-IN"
+                case "gujarati": langCode = "gu-IN"
+                case "french": langCode = "fr-FR"
+                default: langCode = "en-US"
+            }
+
+            // Fallback logic: prefer female, fallback to first available voice
+            if let preferred = AVSpeechSynthesisVoice.speechVoices().first(where: {
+                $0.language == langCode && $0.name.lowercased().contains("female")
+            }) {
+                utterance.voice = preferred
+            } else if let anyVoice = AVSpeechSynthesisVoice(language: langCode) {
+                utterance.voice = anyVoice
+            }
+
+            utterance.rate = 0.5
+            let synthesizer = AVSpeechSynthesizer()
+            synthesizer.speak(utterance)
+    }
+    
 }
+
 
 #Preview {
     ContentView()
